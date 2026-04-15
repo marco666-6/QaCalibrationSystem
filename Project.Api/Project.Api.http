@@ -1,0 +1,16 @@
+@Project.Api_HostAddress = http://localhost:5033
+
+GET {{Project.Api_HostAddress}}/health
+Accept: application/json
+
+###
+
+POST {{Project.Api_HostAddress}}/api/auth/login
+Content-Type: application/json
+
+{
+  "username": "admin",
+  "password": "Admin123!"
+}
+
+###
