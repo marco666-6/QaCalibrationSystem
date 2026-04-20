@@ -3,9 +3,16 @@ BEGIN
     CREATE DATABASE qa_calib;
 END;
 
+GO
+
+USE [qa_calib];
+
+GO
+
 -- =========================
 -- DROP (safe order)
 -- =========================
+IF OBJECT_ID('dbo.qa_calib_equipment_details', 'U') IS NOT NULL DROP TABLE dbo.qa_calib_equipment_details;
 IF OBJECT_ID('dbo.qa_calib_item_details',  'U') IS NOT NULL DROP TABLE dbo.qa_calib_item_details;
 IF OBJECT_ID('dbo.qa_calib_items',         'U') IS NOT NULL DROP TABLE dbo.qa_calib_items;
 IF OBJECT_ID('dbo.qa_calib_approvals',     'U') IS NOT NULL DROP TABLE dbo.qa_calib_approvals;
@@ -103,15 +110,12 @@ GO
 CREATE TABLE dbo.employees (
     employee_id          INT IDENTITY PRIMARY KEY,
     employee_code        NVARCHAR(6) NOT NULL UNIQUE,  -- employee code, unique identifier for each employee (e.g., "525025", "220021", etc)
-    first_name           NVARCHAR(100) NULL,
-    last_name            NVARCHAR(100) NULL,
-    middle_name          NVARCHAR(100) NULL,
     full_name            NVARCHAR(200) NOT NULL,
-    email                NVARCHAR(200) NULL UNIQUE,
+    email                NVARCHAR(200) NULL,
     date_of_birth        DATE NULL,
     gender               NVARCHAR(20) NULL,
     section_id           INT NOT NULL,  -- ref: section id, cant be null, should reference to the sections table manually, can fallback to its _bkp counterpart if there are any issues with referencing
-    position_id          INT NOT NULL,  -- ref: position id, cant be null, should reference to the positions table manually, can fallback to its _bkp counterpart if there are any issues with referencing
+    position_id          INT NULL,  -- ref: position id, cant be null, should reference to the positions table manually, can fallback to its _bkp counterpart if there are any issues with referencing
     manager_id           INT NULL,  -- ref: manager (employee) id, can be null if unknown or not found, self-referencing foreign key to indicate the employee's manager/supervisor
     employment_status    NVARCHAR(50) NOT NULL DEFAULT 'Active',  -- purpose unclear (added per supervisor request) | assumption: employee's current employment status
     profile_photo_url    NVARCHAR(500) NULL,
@@ -131,10 +135,10 @@ GO
 -- =========================
 CREATE TABLE dbo.users (
     user_id                     INT IDENTITY PRIMARY KEY,
-    employee_id                 INT NULL,  -- ref: employee id, actually cant be null, ideally should reference to the employees table, but who knows if errors or some stuff
+    employee_id                 INT NOT NULL,  -- ref: employee id, actually cant be null, ideally should reference to the employees table, but who knows if errors or some stuff
     username                    NVARCHAR(100) NOT NULL UNIQUE,
     password_hash               NVARCHAR(500) NOT NULL,
-    email                       NVARCHAR(200) NOT NULL UNIQUE,
+    email                       NVARCHAR(200) NULL,
     role                        NVARCHAR(50) NOT NULL,
     is_active                   BIT NOT NULL DEFAULT 1,
     failed_login_attempts       INT NOT NULL DEFAULT 0,
@@ -286,15 +290,22 @@ CREATE TABLE dbo.qa_calib_plans (
 -- =========================
 CREATE TABLE dbo.qa_calib_actuals (
     id               INT IDENTITY PRIMARY KEY,
+    plan_id          INT NOT NULL,  -- ref: qa_calib_plans.id to enforce a single actual document per plan
     header_id        INT NOT NULL,  -- ref: calibration main header id, cant be null, should reference to the qa_calib_main_headers table to link the actual calibration to its main header
     calib_status     CHAR(1) NOT NULL DEFAULT 'G',  -- calibration status maps to calibration status enum ('G' = ongoing, 'X' = completed) in project.domain.enums, to indicate the current status of the actual calibration
     completed_dt     DATETIME2 NULL,  -- completion date, can be null, should be updated to the date when the actual calibration is completed (i.e., when the actual calibration status is updated to 'X')
     completed_by     NVARCHAR(6) NULL,  -- completion by, can be null, should be updated to the employee code (e.g., "525025", "220021", etc) of the person who completed the actual calibration when the actual calibration is completed (i.e., when the actual calibration status is updated to 'X')
     
+    CONSTRAINT FK_actuals_plan
+        FOREIGN KEY (plan_id)
+        REFERENCES dbo.qa_calib_plans(id),
+
     CONSTRAINT FK_actuals_header
         FOREIGN KEY (header_id)
         REFERENCES dbo.qa_calib_main_headers(id)
         ON DELETE CASCADE,
+
+    CONSTRAINT UQ_actuals_plan UNIQUE (plan_id),
 
     CONSTRAINT UQ_actuals_header UNIQUE (header_id),
 
@@ -439,8 +450,6 @@ CREATE TABLE dbo.qa_calib_equipment_details (
     brand                    NVARCHAR(200) NULL,
     model                    NVARCHAR(200) NULL,
     location                 NVARCHAR(200) NOT NULL,
-    department_code          NVARCHAR(50) NOT NULL,
-    department_name          NVARCHAR(200) NOT NULL,
     section_code             NVARCHAR(50) NOT NULL,
     section_name             NVARCHAR(200) NOT NULL,
     calib_interval_months    INT NOT NULL,

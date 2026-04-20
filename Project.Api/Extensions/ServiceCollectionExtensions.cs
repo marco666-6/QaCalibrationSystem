@@ -43,6 +43,8 @@ public static class ServiceCollectionExtensions
 
         services.AddScoped<IDbConnectionFactory, DbConnectionFactory>();
         services.AddScoped<IUserRepository, UserRepository>();
+        services.AddScoped<IMasterDataRepository, MasterDataRepository>();
+        services.AddScoped<ICalibrationRepository, CalibrationRepository>();
         return services;
     }
 
@@ -50,6 +52,8 @@ public static class ServiceCollectionExtensions
     {
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<IUserService, UserService>();
+        services.AddScoped<IMasterDataService, MasterDataService>();
+        services.AddScoped<ICalibrationService, CalibrationService>();
         services.AddScoped<IJwtTokenService, JwtTokenService>();
 
         services.AddValidatorsFromAssemblyContaining<LoginRequestValidator>();

@@ -11,8 +11,6 @@ public sealed class CalibrationEquipmentDetail
     public string? Brand { get; set; }
     public string? Model { get; set; }
     public string Location { get; set; } = string.Empty;
-    public string DepartmentCode { get; set; } = string.Empty;
-    public string DepartmentName { get; set; } = string.Empty;
     public string SectionCode { get; set; } = string.Empty;
     public string SectionName { get; set; } = string.Empty;
     public int CalibIntervalMonths { get; set; }

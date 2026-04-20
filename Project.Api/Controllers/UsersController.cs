@@ -8,7 +8,7 @@ namespace Project.Api.Controllers;
 [ApiController]
 [Route("api/users")]
 [Produces("application/json")]
-[Authorize(Roles = "admin")]
+//[Authorize(Roles = "admin")]
 public sealed class UsersController : ControllerBase
 {
     private readonly IUserService _userService;

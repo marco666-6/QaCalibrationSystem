@@ -36,7 +36,9 @@ public sealed class UserRepository : BaseRepository<User>, IUserRepository
         const string sql = $"""
             SELECT {UserColumns}
             FROM dbo.users u
+            LEFT JOIN dbo.employees e ON e.employee_id = u.employee_id
             WHERE u.username = @Username
+               OR e.employee_code = @Username
             """;
 
         using var connection = CreateConnection();
@@ -86,7 +88,7 @@ public sealed class UserRepository : BaseRepository<User>, IUserRepository
     public async Task<Employee?> GetEmployeeRegistrationCandidateAsync(string employeeCode)
     {
         const string sql = """
-            SELECT e.employee_id, e.employee_code, e.first_name, e.last_name, e.middle_name, e.full_name, e.email,
+            SELECT e.employee_id, e.employee_code, e.full_name, e.email,
                    e.date_of_birth, e.gender, e.section_id, e.position_id, e.manager_id, e.employment_status,
                    e.profile_photo_url, e.is_active, e.created_at, e.updated_at
             FROM dbo.employees e
@@ -432,7 +434,7 @@ public sealed class UserRepository : BaseRepository<User>, IUserRepository
     private static async Task<Employee?> GetEmployeeByIdAsync(IDbConnection connection, long employeeId)
     {
         const string sql = """
-            SELECT employee_id, employee_code, first_name, last_name, middle_name, full_name, email,
+            SELECT employee_id, employee_code, full_name, email,
                    date_of_birth, gender, section_id, position_id, manager_id, employment_status,
                    profile_photo_url, is_active, created_at, updated_at
             FROM dbo.employees
@@ -445,7 +447,7 @@ public sealed class UserRepository : BaseRepository<User>, IUserRepository
     private static async Task<Dictionary<long, Employee>> GetEmployeesByIdsAsync(IDbConnection connection, long[] employeeIds)
     {
         const string sql = """
-            SELECT employee_id, employee_code, first_name, last_name, middle_name, full_name, email,
+            SELECT employee_id, employee_code, full_name, email,
                    date_of_birth, gender, section_id, position_id, manager_id, employment_status,
                    profile_photo_url, is_active, created_at, updated_at
             FROM dbo.employees

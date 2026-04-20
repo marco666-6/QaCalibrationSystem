@@ -1,5 +1,7 @@
 using System.Diagnostics;
+using System.Data;
 using System.Runtime.InteropServices;
+using Dapper;
 using Microsoft.Extensions.FileProviders;
 using Project.Api.Extensions;
 using Project.Api.Middleware;
@@ -13,6 +15,9 @@ Log.Logger = new LoggerConfiguration()
 try
 {
     Log.Information("Starting Project API...");
+
+    DefaultTypeMap.MatchNamesWithUnderscores = true;
+    SqlMapper.AddTypeHandler(new DateOnlyTypeHandler());
 
     var builder = WebApplication.CreateBuilder(args);
 
@@ -80,17 +85,28 @@ try
     app.MapControllers();
     app.MapHealthChecks("/health");
 
-    if (app.Environment.IsDevelopment())
+    if (app.Environment.IsDevelopment() && !IsRunningUnderIISExpress())
     {
         var url = builder.Configuration["applicationUrl"]
+            ?? app.Urls.FirstOrDefault(u => u.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
             ?? app.Urls.FirstOrDefault()
-            ?? "http://localhost:5033";
+            ?? "https://localhost:5033";
 
         _ = Task.Run(async () =>
         {
             await Task.Delay(1500);
             OpenBrowser(url);
         });
+    }
+
+    static bool IsRunningUnderIISExpress()
+    {
+        try
+        {
+            var name = Process.GetCurrentProcess().ProcessName;
+            return name?.IndexOf("iisexpress", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+        catch { return false; }
     }
 
     await app.RunAsync();
@@ -126,4 +142,22 @@ static void OpenBrowser(string url)
     {
         Log.Warning(ex, "Could not auto-open browser at {Url}", url);
     }
+}
+
+sealed class DateOnlyTypeHandler : SqlMapper.TypeHandler<DateOnly>
+{
+    public override void SetValue(IDbDataParameter parameter, DateOnly value)
+    {
+        parameter.DbType = DbType.Date;
+        parameter.Value = value.ToDateTime(TimeOnly.MinValue);
+    }
+
+    public override DateOnly Parse(object value)
+        => value switch
+        {
+            DateOnly dateOnly => dateOnly,
+            DateTime dateTime => DateOnly.FromDateTime(dateTime),
+            string text when DateOnly.TryParse(text, out var parsed) => parsed,
+            _ => throw new DataException($"Cannot convert {value.GetType().FullName} to {nameof(DateOnly)}.")
+        };
 }
