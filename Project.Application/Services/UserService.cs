@@ -68,6 +68,7 @@ public sealed class UserService : IUserService
         var user = new User
         {
             EmployeeId = request.EmployeeId,
+            EmployeeCode = null,
             Username = request.Username.Trim(),
             Email = normalizedEmail,
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password),
@@ -103,6 +104,7 @@ public sealed class UserService : IUserService
             return ApiResponse<UserDto>.Fail("The selected employee is already linked to another user.");
 
         user.EmployeeId = request.EmployeeId;
+        user.EmployeeCode = user.Employee?.EmployeeCode;
         user.Username = request.Username.Trim();
         user.Email = normalizedEmail;
         user.Role = request.Role.Trim();

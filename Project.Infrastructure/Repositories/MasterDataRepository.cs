@@ -158,12 +158,12 @@ public sealed class MasterDataRepository : BaseRepository<Section>, IMasterDataR
         }
         if (filters.SectionId.HasValue)
         {
-            where.Add("e.section_id = @SectionId");
+            where.Add("s.section_id = @SectionId");
             parameters.Add("SectionId", filters.SectionId.Value);
         }
         if (filters.PositionId.HasValue)
         {
-            where.Add("e.position_id = @PositionId");
+            where.Add("p.position_id = @PositionId");
             parameters.Add("PositionId", filters.PositionId.Value);
         }
         if (filters.IsActive.HasValue)
@@ -176,7 +176,9 @@ public sealed class MasterDataRepository : BaseRepository<Section>, IMasterDataR
         using var connection = CreateConnection();
         var total = await connection.ExecuteScalarAsync<int>($"""
             SELECT COUNT(*)
-            FROM dbo.employees e
+            FROM Shared.dbo.employees e
+            LEFT JOIN dbo.sections s ON s.section_code = e.section_cd
+            LEFT JOIN dbo.positions p ON p.position_code = e.position_cd
             WHERE {whereClause}
             """, parameters);
         var items = await connection.QueryAsync<EmployeeDto>($"""
@@ -185,22 +187,22 @@ public sealed class MasterDataRepository : BaseRepository<Section>, IMasterDataR
                 e.employee_code,
                 e.full_name,
                 e.email,
-                e.section_id,
+                COALESCE(s.section_id, 0) AS section_id,
                 s.section_code,
-                s.section_name,
-                e.position_id,
+                COALESCE(s.section_name, e.section_cd) AS section_name,
+                p.position_id,
                 p.position_code,
                 p.position_name,
                 e.manager_id,
                 m.full_name AS manager_name,
-                e.employment_status,
+                CAST('Active' AS nvarchar(50)) AS employment_status,
                 e.is_active,
                 e.created_at,
                 e.updated_at
-            FROM dbo.employees e
-            INNER JOIN dbo.sections s ON s.section_id = e.section_id
-            LEFT JOIN dbo.positions p ON p.position_id = e.position_id
-            LEFT JOIN dbo.employees m ON m.employee_id = e.manager_id
+            FROM Shared.dbo.employees e
+            LEFT JOIN dbo.sections s ON s.section_code = e.section_cd
+            LEFT JOIN dbo.positions p ON p.position_code = e.position_cd
+            LEFT JOIN Shared.dbo.employees m ON m.employee_id = e.manager_id
             WHERE {whereClause}
             ORDER BY e.employee_code
             OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY
@@ -218,22 +220,22 @@ public sealed class MasterDataRepository : BaseRepository<Section>, IMasterDataR
                 e.employee_code,
                 e.full_name,
                 e.email,
-                e.section_id,
+                COALESCE(s.section_id, 0) AS section_id,
                 s.section_code,
-                s.section_name,
-                e.position_id,
+                COALESCE(s.section_name, e.section_cd) AS section_name,
+                p.position_id,
                 p.position_code,
                 p.position_name,
                 e.manager_id,
                 m.full_name AS manager_name,
-                e.employment_status,
+                CAST('Active' AS nvarchar(50)) AS employment_status,
                 e.is_active,
                 e.created_at,
                 e.updated_at
-            FROM dbo.employees e
-            INNER JOIN dbo.sections s ON s.section_id = e.section_id
-            LEFT JOIN dbo.positions p ON p.position_id = e.position_id
-            LEFT JOIN dbo.employees m ON m.employee_id = e.manager_id
+            FROM Shared.dbo.employees e
+            LEFT JOIN dbo.sections s ON s.section_code = e.section_cd
+            LEFT JOIN dbo.positions p ON p.position_code = e.position_cd
+            LEFT JOIN Shared.dbo.employees m ON m.employee_id = e.manager_id
             WHERE e.employee_id = @EmployeeId
             """,
             new { EmployeeId = employeeId });
@@ -249,10 +251,10 @@ public sealed class MasterDataRepository : BaseRepository<Section>, IMasterDataR
                 e.employee_code,
                 e.full_name,
                 e.email,
-                e.section_id,
-                s.section_name
-            FROM dbo.employees e
-            INNER JOIN dbo.sections s ON s.section_id = e.section_id
+                COALESCE(s.section_id, 0) AS section_id,
+                COALESCE(s.section_name, e.section_cd) AS section_name
+            FROM Shared.dbo.employees e
+            LEFT JOIN dbo.sections s ON s.section_code = e.section_cd
             WHERE e.is_active = 1
               AND (@Search IS NULL OR e.employee_code LIKE @LikeSearch OR e.full_name LIKE @LikeSearch)
             ORDER BY e.full_name, e.employee_code
@@ -263,7 +265,7 @@ public sealed class MasterDataRepository : BaseRepository<Section>, IMasterDataR
     public async Task<bool> EmployeeCodeExistsAsync(string employeeCode, long? excludeId = null)
     {
         using var connection = CreateConnection();
-        return await connection.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM dbo.employees WHERE employee_code = @EmployeeCode AND (@ExcludeId IS NULL OR employee_id <> @ExcludeId)", new { EmployeeCode = employeeCode, ExcludeId = excludeId }) > 0;
+        return await connection.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM Shared.dbo.employees WHERE employee_code = @EmployeeCode AND (@ExcludeId IS NULL OR employee_id <> @ExcludeId)", new { EmployeeCode = employeeCode, ExcludeId = excludeId }) > 0;
     }
 
     public async Task<bool> EmployeeEmailExistsAsync(string? email, long? excludeId = null)
@@ -272,19 +274,105 @@ public sealed class MasterDataRepository : BaseRepository<Section>, IMasterDataR
             return false;
 
         using var connection = CreateConnection();
-        return await connection.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM dbo.employees WHERE email = @Email AND (@ExcludeId IS NULL OR employee_id <> @ExcludeId)", new { Email = email, ExcludeId = excludeId }) > 0;
+        return await connection.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM Shared.dbo.employees WHERE email = @Email AND (@ExcludeId IS NULL OR employee_id <> @ExcludeId)", new { Email = email, ExcludeId = excludeId }) > 0;
     }
 
-    public Task<long> CreateEmployeeAsync(Employee employee)
-        => ExecuteScalarAsync<long>("INSERT INTO dbo.employees (employee_code, full_name, email, section_id, position_id, manager_id, employment_status, is_active, created_at, updated_at) VALUES (@EmployeeCode, @FullName, @Email, @SectionId, @PositionId, @ManagerId, @EmploymentStatus, @IsActive, @CreatedAt, @UpdatedAt); SELECT CAST(SCOPE_IDENTITY() AS bigint);", employee)!;
+    public async Task<long> CreateEmployeeAsync(Employee employee)
+    {
+        using var connection = CreateConnection();
+        var sectionCode = await connection.ExecuteScalarAsync<string?>("SELECT section_code FROM dbo.sections WHERE section_id = @SectionId", new { employee.SectionId });
+        var positionCode = employee.PositionId.HasValue
+            ? await connection.ExecuteScalarAsync<string?>("SELECT position_code FROM dbo.positions WHERE position_id = @PositionId", new { PositionId = employee.PositionId.Value })
+            : null;
+
+        const string sql = """
+            INSERT INTO Shared.dbo.employees (
+                employee_code,
+                full_name,
+                email,
+                date_of_birth,
+                gender,
+                section_cd,
+                position_cd,
+                manager_id,
+                profile_photo_url,
+                is_active,
+                created_at,
+                updated_at
+            )
+            VALUES (
+                @EmployeeCode,
+                @FullName,
+                @Email,
+                @DateOfBirth,
+                @Gender,
+                @SectionCode,
+                @PositionCode,
+                @ManagerId,
+                @ProfilePhotoUrl,
+                @IsActive,
+                @CreatedAt,
+                @UpdatedAt
+            );
+            SELECT CAST(SCOPE_IDENTITY() AS bigint);
+            """;
+
+        return await connection.ExecuteScalarAsync<long>(sql, new
+        {
+            employee.EmployeeCode,
+            employee.FullName,
+            employee.Email,
+            employee.DateOfBirth,
+            employee.Gender,
+            SectionCode = sectionCode ?? throw new InvalidOperationException("Section code could not be resolved."),
+            PositionCode = positionCode ?? "000",
+            employee.ManagerId,
+            employee.ProfilePhotoUrl,
+            employee.IsActive,
+            employee.CreatedAt,
+            employee.UpdatedAt
+        });
+    }
 
     public async Task<bool> UpdateEmployeeAsync(Employee employee)
-        => await ExecuteAsync("UPDATE dbo.employees SET employee_code = @EmployeeCode, full_name = @FullName, email = @Email, section_id = @SectionId, position_id = @PositionId, manager_id = @ManagerId, employment_status = @EmploymentStatus, is_active = @IsActive, updated_at = @UpdatedAt WHERE employee_id = @EmployeeId", employee) > 0;
+    {
+        using var connection = CreateConnection();
+        var sectionCode = await connection.ExecuteScalarAsync<string?>("SELECT section_code FROM dbo.sections WHERE section_id = @SectionId", new { employee.SectionId });
+        var positionCode = employee.PositionId.HasValue
+            ? await connection.ExecuteScalarAsync<string?>("SELECT position_code FROM dbo.positions WHERE position_id = @PositionId", new { PositionId = employee.PositionId.Value })
+            : null;
+
+        const string sql = """
+            UPDATE Shared.dbo.employees
+            SET employee_code = @EmployeeCode,
+                full_name = @FullName,
+                email = @Email,
+                section_cd = @SectionCode,
+                position_cd = @PositionCode,
+                manager_id = @ManagerId,
+                is_active = @IsActive,
+                updated_at = @UpdatedAt
+            WHERE employee_id = @EmployeeId
+            """;
+
+        return await connection.ExecuteAsync(sql, new
+        {
+            employee.EmployeeId,
+            employee.EmployeeCode,
+            employee.FullName,
+            employee.Email,
+            SectionCode = sectionCode ?? throw new InvalidOperationException("Section code could not be resolved."),
+            PositionCode = positionCode ?? "000",
+            employee.ManagerId,
+            employee.IsActive,
+            employee.UpdatedAt
+        }) > 0;
+    }
 
     public async Task<bool> EmployeeExistsAsync(long employeeId)
     {
         using var connection = CreateConnection();
-        return await connection.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM dbo.employees WHERE employee_id = @EmployeeId", new { EmployeeId = employeeId }) > 0;
+        return await connection.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM Shared.dbo.employees WHERE employee_id = @EmployeeId", new { EmployeeId = employeeId }) > 0;
     }
 
     public async Task<bool> SectionExistsAsync(long sectionId)

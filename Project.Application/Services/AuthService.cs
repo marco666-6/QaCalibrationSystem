@@ -78,10 +78,6 @@ public sealed class AuthService : IAuthService
         if (!validation.IsValid)
             return ApiResponse<LoginResponse>.Fail("Validation failed.", validation.Errors.Select(x => x.ErrorMessage));
 
-        var employee = await _userRepository.GetEmployeeRegistrationCandidateAsync(request.EmployeeCode.Trim());
-        if (employee is null)
-            return ApiResponse<LoginResponse>.Fail("Employee was not found or already has a user account.");
-
         if (await _userRepository.UsernameExistsAsync(request.Username.Trim()))
             return ApiResponse<LoginResponse>.Fail($"Username '{request.Username}' is already in use.");
 
@@ -89,9 +85,22 @@ public sealed class AuthService : IAuthService
         if (await _userRepository.EmailExistsAsync(normalizedEmail))
             return ApiResponse<LoginResponse>.Fail($"Email '{request.Email}' is already registered.");
 
+        var employeeCode = request.EmployeeCode.Trim();
+        var employee = await _userRepository.GetSharedEmployeeByCodeAsync(employeeCode);
+        if (employee is null)
+            return ApiResponse<LoginResponse>.Fail("Employee was not found in the shared HR directory.");
+
+        var employeeId = await _userRepository.UpsertSharedEmployeeAsync(employeeCode, normalizedEmail);
+        if (!employeeId.HasValue || employeeId.Value <= 0)
+            return ApiResponse<LoginResponse>.Fail("Employee could not be synchronized from the shared HR directory.");
+
+        if (await _userRepository.EmployeeAlreadyAssignedAsync(employeeId.Value))
+            return ApiResponse<LoginResponse>.Fail("Employee already has a user account.");
+
         var user = new User
         {
-            EmployeeId = employee.EmployeeId,
+            EmployeeId = employeeId.Value,
+            EmployeeCode = employeeCode,
             Username = request.Username.Trim(),
             Email = normalizedEmail,
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password),

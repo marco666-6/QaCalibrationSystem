@@ -381,7 +381,7 @@ public sealed partial class CalibrationRepository
         EmployeeIdentityRow? employee = null;
         if (request.EmployeeId.HasValue)
         {
-            employee = await connection.QuerySingleOrDefaultAsync<EmployeeIdentityRow>("SELECT employee_id, employee_code, full_name FROM dbo.employees WHERE employee_id = @EmployeeId", new { request.EmployeeId });
+            employee = await connection.QuerySingleOrDefaultAsync<EmployeeIdentityRow>("SELECT employee_id, employee_code, full_name FROM Shared.dbo.employees WHERE employee_id = @EmployeeId", new { request.EmployeeId });
             if (employee is null)
                 return ApiResponse<ActualWorkerDto>.Fail("Selected employee was not found.");
         }
@@ -408,8 +408,8 @@ public sealed partial class CalibrationRepository
                 CreatedBy = createdBy
             });
 
-        var worker = await connection.QuerySingleAsync<ActualWorkerDto>("SELECT id, employee_id, employee_code, employee_full_name, external_party_name, is_pic FROM dbo.qa_calib_workers WHERE id = @Id", new { Id = id });
-        return ApiResponse<ActualWorkerDto>.Created(worker);
+            var worker = await connection.QuerySingleAsync<ActualWorkerDto>("SELECT id, employee_id, employee_code, employee_full_name, external_party_name, is_pic FROM dbo.qa_calib_workers WHERE id = @Id", new { Id = id });
+            return ApiResponse<ActualWorkerDto>.Created(worker);
     }
 
     public async Task<ApiResponse> UpdateActualItemAsync(long itemId, UpdateActualItemRequest request, string updatedBy)
@@ -700,7 +700,7 @@ public sealed partial class CalibrationRepository
             "SELECT id, equipment_name, item_count, item_completed, std_used, remarks FROM dbo.qa_calib_items WHERE header_id = @HeaderId ORDER BY equipment_name, id",
             new { HeaderId = headerId })).ToList();
 
-        var details = (await connection.QueryAsync<PlanItemDetailDto>(
+        var details = (await connection.QueryAsync<PlanItemDetailRow>(
             """
             SELECT
                 d.id,
@@ -720,7 +720,9 @@ public sealed partial class CalibrationRepository
             WHERE i.header_id = @HeaderId
             ORDER BY i.id, e.control_no
             """,
-            new { HeaderId = headerId })).ToList();
+            new { HeaderId = headerId }))
+            .Select(x => new PlanItemDetailDto(x.Id, x.EquipmentId, x.ControlNo, x.SectionName, x.PicFullName, x.NextCalibDate, x.CalibResult, x.OverdueFlag, x.CertificateNo, x.Remarks))
+            .ToList();
 
         var itemDetails = await connection.QueryAsync<(long ItemId, long DetailId)>("SELECT item_id, id AS detail_id FROM dbo.qa_calib_item_details d INNER JOIN dbo.qa_calib_items i ON i.id = d.item_id WHERE i.header_id = @HeaderId", new { HeaderId = headerId });
         var detailMap = itemDetails.GroupBy(x => x.ItemId).ToDictionary(x => x.Key, x => x.Select(v => v.DetailId).ToHashSet());
@@ -737,7 +739,7 @@ public sealed partial class CalibrationRepository
     {
         foreach (var step in new[] { ("1", preparerEmployeeId), ("2", checkerEmployeeId), ("3", approverEmployeeId) })
         {
-            var employee = await connection.QuerySingleAsync<EmployeeIdentityRow>("SELECT employee_id, employee_code, full_name FROM dbo.employees WHERE employee_id = @EmployeeId", new { EmployeeId = step.Item2 }, transaction);
+            var employee = await connection.QuerySingleAsync<EmployeeIdentityRow>("SELECT employee_id, employee_code, full_name FROM Shared.dbo.employees WHERE employee_id = @EmployeeId", new { EmployeeId = step.Item2 }, transaction);
             await connection.ExecuteAsync(
                 """
                 INSERT INTO dbo.qa_calib_approvals (header_id, step_no, employee_id, employee_code, employee_full_name, action, remarks, actioned_at, created_at, created_by, updated_at, updated_by)
@@ -885,4 +887,5 @@ public sealed partial class CalibrationRepository
     private sealed record EmployeeIdentityRow(long EmployeeId, string EmployeeCode, string FullName);
     private sealed record EquipmentPlanRow(long Id, string EquipmentName, string ControlNo, DateOnly NextCalibDate);
     private sealed record PlanItemRow(long Id, string EquipmentName, int ItemCount, int ItemCompleted, string? StdUsed, string? Remarks);
+    private sealed record PlanItemDetailRow(int Id, int EquipmentId, string ControlNo, string SectionName, string PicFullName, DateTime NextCalibDate, string? CalibResult, bool OverdueFlag, string? CertificateNo, string? Remarks);
 }

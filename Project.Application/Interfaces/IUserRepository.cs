@@ -8,7 +8,8 @@ public interface IUserRepository
     Task<User?> GetByUsernameAsync(string username);
     Task<User?> GetByIdAsync(long userId);
     Task<User?> GetByRefreshTokenAsync(string refreshToken);
-    Task<Employee?> GetEmployeeRegistrationCandidateAsync(string employeeCode);
+    Task<Employee?> GetSharedEmployeeByCodeAsync(string employeeCode);
+    Task<long?> UpsertSharedEmployeeAsync(string employeeCode, string? email);
     Task<(IEnumerable<User> Items, int TotalCount)> GetAllAsync(UserFilterParams filters);
     Task<IEnumerable<User>> GetOptionsAsync(UserOptionFilterParams filters);
     Task<bool> UsernameExistsAsync(string username, long? excludeUserId = null);

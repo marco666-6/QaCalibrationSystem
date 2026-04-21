@@ -25,7 +25,6 @@ IF OBJECT_ID('dbo.qa_calib_equipments',    'U') IS NOT NULL DROP TABLE dbo.qa_ca
 
 IF OBJECT_ID('dbo.password_reset_tokens', 'U') IS NOT NULL DROP TABLE dbo.password_reset_tokens;
 IF OBJECT_ID('dbo.users', 'U') IS NOT NULL DROP TABLE dbo.users;
-IF OBJECT_ID('dbo.employees', 'U') IS NOT NULL DROP TABLE dbo.employees;
 IF OBJECT_ID('dbo.sections', 'U') IS NOT NULL DROP TABLE dbo.sections;
 IF OBJECT_ID('dbo.positions', 'U') IS NOT NULL DROP TABLE dbo.positions;
 IF OBJECT_ID('dbo.locations', 'U') IS NOT NULL DROP TABLE dbo.locations;
@@ -105,40 +104,14 @@ GO
 
 
 -- =========================
--- EMPLOYEES
--- =========================
-CREATE TABLE dbo.employees (
-    employee_id          INT IDENTITY PRIMARY KEY,
-    employee_code        NVARCHAR(6) NOT NULL UNIQUE,  -- employee code, unique identifier for each employee (e.g., "525025", "220021", etc)
-    full_name            NVARCHAR(200) NOT NULL,
-    email                NVARCHAR(200) NULL,
-    date_of_birth        DATE NULL,
-    gender               NVARCHAR(20) NULL,
-    section_id           INT NOT NULL,  -- ref: section id, cant be null, should reference to the sections table manually, can fallback to its _bkp counterpart if there are any issues with referencing
-    position_id          INT NULL,  -- ref: position id, cant be null, should reference to the positions table manually, can fallback to its _bkp counterpart if there are any issues with referencing
-    manager_id           INT NULL,  -- ref: manager (employee) id, can be null if unknown or not found, self-referencing foreign key to indicate the employee's manager/supervisor
-    employment_status    NVARCHAR(50) NOT NULL DEFAULT 'Active',  -- purpose unclear (added per supervisor request) | assumption: employee's current employment status
-    profile_photo_url    NVARCHAR(500) NULL,
-    is_active            BIT NOT NULL DEFAULT 1,
-    created_at           DATETIME2 NOT NULL DEFAULT GETDATE(),
-    updated_at           DATETIME2 NULL,
-
-    CONSTRAINT FK_employees_manager
-        FOREIGN KEY (manager_id)
-        REFERENCES dbo.employees(employee_id)
-);
-GO
-
-
--- =========================
 -- USERS
 -- =========================
 CREATE TABLE dbo.users (
     user_id                     INT IDENTITY PRIMARY KEY,
-    employee_id                 INT NOT NULL,  -- ref: employee id, actually cant be null, ideally should reference to the employees table, but who knows if errors or some stuff
+    employee_id                 INT NULL,  -- ref: Shared.dbo.employees.employee_id; cross-database FK intentionally omitted
     username                    NVARCHAR(100) NOT NULL UNIQUE,
     password_hash               NVARCHAR(500) NOT NULL,
-    email                       NVARCHAR(200) NULL,
+    email                       NVARCHAR(200) NOT NULL,
     role                        NVARCHAR(50) NOT NULL,
     is_active                   BIT NOT NULL DEFAULT 1,
     failed_login_attempts       INT NOT NULL DEFAULT 0,
@@ -148,11 +121,7 @@ CREATE TABLE dbo.users (
     refresh_token               NVARCHAR(MAX) NULL,
     refresh_token_expires_at    DATETIME2 NULL,
     created_at                  DATETIME2 NOT NULL DEFAULT GETDATE(),  -- user's creation date, defaults to current date when the record is created
-    updated_at                  DATETIME2 NULL,
-
-    CONSTRAINT FK_users_employee
-        FOREIGN KEY (employee_id)
-        REFERENCES dbo.employees(employee_id)
+    updated_at                  DATETIME2 NULL
 );
 GO
 
@@ -191,9 +160,9 @@ CREATE TABLE dbo.qa_calib_equipments (
     model                    NVARCHAR(200) NULL,  -- equipment's model, can be null if not applicable or unknown, basically its model
     location                 NVARCHAR(200) NOT NULL,  -- equipment's location, choose from existing locations table data (thru autocomplete) or enter a custom one (e.g., room, area, "Dekat Blabla").
     section_id               INT NOT NULL,  -- ref: section id, cant be null, should reference to the sections table manually, can fallback to its _bkp counterpart if there are any issues with referencing
-    pic_id                   INT NOT NULL,  -- ref: person in charge (employee) id, cant be null, should reference to the employees table manually
-    pic_code                 NVARCHAR(6) NOT NULL,  -- person in charge (employee) code, denormalized from employees.employee_code for easier reference and to avoid complications with employee_id if there are any issues with referencing
-    pic_full_name            NVARCHAR(200) NOT NULL,  -- person in charge (employee) full name, denormalized from employees.full_name for easier reference and to avoid complications with employee_id if there are any issues with referencing
+    pic_id                   INT NOT NULL,  -- ref: Shared.dbo.employees.employee_id
+    pic_code                 NVARCHAR(6) NOT NULL,  -- denormalized from Shared.dbo.employees.employee_code
+    pic_full_name            NVARCHAR(200) NOT NULL,  -- denormalized from Shared.dbo.employees.full_name
     calib_interval_months    INT NOT NULL,  -- calibration interval in months (1 = monthly, 3 = every 3 months, 12 = yearly, 20 = every 20 months, etc.)
     last_calib_date          DATE NOT NULL,  -- equipment's last calibration date, required due to existing manual records, if no last calibration date or for new stuff, use GETDATE()
     last_calib_month         AS MONTH(last_calib_date) PERSISTED,  -- equipment's last calibration month, same like last_calib_date but instead just get the month
@@ -221,7 +190,7 @@ GO
 -- =========================
 CREATE TABLE dbo.qa_calib_approvers (
     id             INT IDENTITY PRIMARY KEY,
-    employee_id    INT NOT NULL,  -- ref: employee id, cant be null, should reference to the employees table manually to indicate which employee is the approver for a specific step
+    employee_id    INT NOT NULL,  -- ref: Shared.dbo.employees.employee_id
     step_no        CHAR(1) NOT NULL,  -- approver's step_no maps to approval step enum ('1'=Prepared, '2'=Checked, '3'=Approved) in project.domain.enums
     is_active      BIT NOT NULL DEFAULT 1,
     created_at     DATETIME2 NOT NULL DEFAULT GETDATE(),  -- approver creation date, defaults to current date when the record is created
@@ -320,9 +289,9 @@ CREATE TABLE dbo.qa_calib_actuals (
 CREATE TABLE dbo.qa_calib_workers (
     id                     INT IDENTITY PRIMARY KEY,
     actual_id              INT NOT NULL,  -- ref: qa_calib_actuals.id — technicians belong to actual execution
-    employee_id            INT NULL,  -- ref: employee id, can be null, should reference to the employees table manually to indicate which employee is the technician for the actual calibration
-    employee_code          NVARCHAR(6) NULL,  -- employee code of the technician, should reference to employees.employee_code, used for easier reference and to avoid complications with employee_id if there are any issues with referencing
-    employee_full_name     NVARCHAR(200) NULL,  -- employee full name of the technician, should reference to employees.full_name, used for easier reference and to avoid complications with employee_id if there are any issues with referencing
+    employee_id            INT NULL,  -- ref: Shared.dbo.employees.employee_id
+    employee_code          NVARCHAR(6) NULL,  -- denormalized from Shared.dbo.employees.employee_code
+    employee_full_name     NVARCHAR(200) NULL,  -- denormalized from Shared.dbo.employees.full_name
     external_party_name    NVARCHAR(200) NULL,  -- name of the external party (not in employees table), can be null if the technician is internal or if the name or company is unknown
     is_pic                 BIT NOT NULL DEFAULT 0,  -- 1 = person-in-charge / lead technician
     created_at             DATETIME2 NOT NULL DEFAULT GETDATE(),
@@ -351,9 +320,9 @@ CREATE TABLE dbo.qa_calib_approvals (
     id                    INT IDENTITY PRIMARY KEY,
     header_id             INT NOT NULL,  -- ref: qa_calib_main_headers.id
     step_no               CHAR(1) NOT NULL,  -- '1' = Prepared, '2' = Checked, '3' = Approved
-    employee_id           INT NULL,  -- ref: employee id, can be null, should reference to the employees table manually to indicate which employee took the approval action for a specific step
-    employee_code         NVARCHAR(6) NULL,  -- employee code of the technician, should reference to employees.employee_code, used for easier reference and to avoid complications with employee_id if there are any issues with referencing
-    employee_full_name    NVARCHAR(200) NULL,  -- employee full name of the technician, should reference to employees.full_name, used for easier reference and to avoid complications with employee_id if there are any issues with referencing
+    employee_id           INT NULL,  -- ref: Shared.dbo.employees.employee_id
+    employee_code         NVARCHAR(6) NULL,  -- denormalized from Shared.dbo.employees.employee_code
+    employee_full_name    NVARCHAR(200) NULL,  -- denormalized from Shared.dbo.employees.full_name
     action                CHAR(1) NOT NULL DEFAULT 'C',  -- 'C' = Cancel, 'S' = Submit
     remarks               NVARCHAR(500) NULL,
     actioned_at           DATETIME2 NULL,  -- when the approval action was taken

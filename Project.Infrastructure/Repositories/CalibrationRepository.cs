@@ -192,8 +192,8 @@ public sealed partial class CalibrationRepository : BaseRepository<CalibrationEq
         var total = await connection.ExecuteScalarAsync<int>($"""
             SELECT COUNT(*)
             FROM dbo.qa_calib_approvers a
-            INNER JOIN dbo.employees e ON e.employee_id = a.employee_id
-            INNER JOIN dbo.sections s ON s.section_id = e.section_id
+            INNER JOIN Shared.dbo.employees e ON e.employee_id = a.employee_id
+            LEFT JOIN dbo.sections s ON s.section_code = e.section_cd
             WHERE {whereClause}
             """, parameters);
         var items = await connection.QueryAsync<ApproverDto>($"""
@@ -202,8 +202,8 @@ public sealed partial class CalibrationRepository : BaseRepository<CalibrationEq
                 a.employee_id,
                 e.employee_code,
                 e.full_name AS employee_name,
-                e.section_id,
-                s.section_name,
+                COALESCE(s.section_id, 0) AS section_id,
+                COALESCE(s.section_name, e.section_cd) AS section_name,
                 a.step_no,
                 a.is_active,
                 a.created_at,
@@ -211,8 +211,8 @@ public sealed partial class CalibrationRepository : BaseRepository<CalibrationEq
                 a.created_by,
                 a.updated_by
             FROM dbo.qa_calib_approvers a
-            INNER JOIN dbo.employees e ON e.employee_id = a.employee_id
-            INNER JOIN dbo.sections s ON s.section_id = e.section_id
+            INNER JOIN Shared.dbo.employees e ON e.employee_id = a.employee_id
+            LEFT JOIN dbo.sections s ON s.section_code = e.section_cd
             WHERE {whereClause}
             ORDER BY a.step_no, e.full_name
             OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY
@@ -230,8 +230,8 @@ public sealed partial class CalibrationRepository : BaseRepository<CalibrationEq
                 a.employee_id,
                 e.employee_code,
                 e.full_name AS employee_name,
-                e.section_id,
-                s.section_name,
+                COALESCE(s.section_id, 0) AS section_id,
+                COALESCE(s.section_name, e.section_cd) AS section_name,
                 a.step_no,
                 a.is_active,
                 a.created_at,
@@ -239,8 +239,8 @@ public sealed partial class CalibrationRepository : BaseRepository<CalibrationEq
                 a.created_by,
                 a.updated_by
             FROM dbo.qa_calib_approvers a
-            INNER JOIN dbo.employees e ON e.employee_id = a.employee_id
-            INNER JOIN dbo.sections s ON s.section_id = e.section_id
+            INNER JOIN Shared.dbo.employees e ON e.employee_id = a.employee_id
+            LEFT JOIN dbo.sections s ON s.section_code = e.section_cd
             WHERE a.id = @ApproverId
             """,
             new { ApproverId = approverId });
@@ -263,7 +263,29 @@ public sealed partial class CalibrationRepository : BaseRepository<CalibrationEq
     public async Task<Employee?> GetEmployeeByIdAsync(long employeeId)
     {
         using var connection = CreateConnection();
-        return await connection.QuerySingleOrDefaultAsync<Employee>("SELECT employee_id, employee_code, full_name, email, section_id, position_id, manager_id, employment_status, is_active, created_at, updated_at FROM dbo.employees WHERE employee_id = @EmployeeId", new { EmployeeId = employeeId });
+        return await connection.QuerySingleOrDefaultAsync<Employee>(
+            """
+            SELECT
+                e.employee_id,
+                e.employee_code,
+                e.full_name,
+                e.email,
+                e.date_of_birth,
+                e.gender,
+                COALESCE(s.section_id, 0) AS section_id,
+                p.position_id,
+                e.manager_id,
+                CAST('Active' AS nvarchar(50)) AS employment_status,
+                e.profile_photo_url,
+                e.is_active,
+                e.created_at,
+                e.updated_at
+            FROM Shared.dbo.employees e
+            LEFT JOIN dbo.sections s ON s.section_code = e.section_cd
+            LEFT JOIN dbo.positions p ON p.position_code = e.position_cd
+            WHERE e.employee_id = @EmployeeId
+            """,
+            new { EmployeeId = employeeId });
     }
 
     public async Task<EquipmentSummaryCardsDto> GetEquipmentSummaryCardsAsync()
@@ -563,7 +585,7 @@ public sealed partial class CalibrationRepository : BaseRepository<CalibrationEq
 
     private static async Task<IEnumerable<ReminderItemDto>> GetReminderItemsAsync(IDbConnection connection, ReminderFilterParams filters)
     {
-        var items = await connection.QueryAsync<ReminderItemDto>(
+        var items = await connection.QueryAsync<ReminderItemRow>(
             """
             SELECT
                 e.id AS equipment_id,
@@ -601,6 +623,34 @@ public sealed partial class CalibrationRepository : BaseRepository<CalibrationEq
                 LikeLocation = $"%{filters.Location?.Trim()}%"
             });
 
-        return items.Where(x => string.IsNullOrWhiteSpace(filters.DueCategory) || string.Equals(x.DueCategory, filters.DueCategory, StringComparison.OrdinalIgnoreCase));
+        return items
+            .Select(x => new ReminderItemDto(
+                x.EquipmentId,
+                x.EquipmentName,
+                x.ControlNo,
+                x.SectionName,
+                x.PicCode,
+                x.PicFullName,
+                x.Location,
+                x.LastCalibDate,
+                x.NextCalibDate,
+                x.CalibType,
+                x.DueCategory,
+                x.IsOverdue))
+            .Where(x => string.IsNullOrWhiteSpace(filters.DueCategory) || string.Equals(x.DueCategory, filters.DueCategory, StringComparison.OrdinalIgnoreCase));
     }
+
+    private sealed record ReminderItemRow(
+        int EquipmentId,
+        string EquipmentName,
+        string ControlNo,
+        string SectionName,
+        string PicCode,
+        string PicFullName,
+        string Location,
+        DateTime LastCalibDate,
+        DateTime NextCalibDate,
+        string CalibType,
+        string DueCategory,
+        bool IsOverdue);
 }

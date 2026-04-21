@@ -3,6 +3,7 @@ namespace Project.Domain.Entities;
 public sealed class User
 {
     public long UserId { get; set; }
+    public string? EmployeeCode { get; set; }
     public long? EmployeeId { get; set; }
     public string Username { get; set; } = string.Empty;
     public string PasswordHash { get; set; } = string.Empty;
